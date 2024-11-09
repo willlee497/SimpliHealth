@@ -1,2 +1,1 @@
-# SimpliHealth
 Simplifying clinical health.
