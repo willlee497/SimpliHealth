@@ -16,22 +16,31 @@ The extracted variables are then available for use throughout the rest of our ap
 */
 
 // This function uses Gemini to process the user's input and extract key health information
-async function processHealthInput(input) {
+async function processHealthInput(input, conversationHistory) {
   // Get the Gemini model we'll use for text generation
   const model = genAI.getGenerativeModel({ model: "gemini-pro" })
   
-  // Construct a prompt for Gemini to extract age, location, and symptom
+  // Construct a prompt for Gemini to extract age, location, condition (if any), and symptoms
   // We're asking Gemini to return the information in a specific JSON format
   const prompt = `
-    Extract the age, location, and symptom from the following text. 
-    Respond with a JSON object containing these three fields:
-    {
-      "age": (number),
-      "location": (string),
-      "symptom": (string)
-    }
+    Given the following conversation history and new input, extract the age, location, condition (if any), and symptoms.
+    If the new input is a question or comment about a previous health issue, use the most recent health information from the conversation history.
+    If it's a new health issue, extract the information from the new input.
     
-    Text: "${input}"
+    Conversation history:
+    ${conversationHistory.join('\n')}
+    
+    New input: "${input}"
+    
+    Respond with a JSON object containing these fields:
+    {
+      "age": (number or null if not provided),
+      "location": (string or null if not provided),
+      "condition": (string or null if not provided),
+      "symptoms": (array of strings, can be empty),
+      "isFollowUp": (boolean, true if the input is a follow-up question or comment about a previous health issue),
+      "followUpTopic": (string, the main topic of the follow-up question or comment, or null if not a follow-up)
+    }
   `
   
   // Send the prompt to Gemini and await the response
@@ -39,43 +48,130 @@ async function processHealthInput(input) {
   const response = await result.response
   
   try {
+    // Remove the backticks, "JSON" tag, and any leading/trailing whitespace from the response
+    const cleanedResponse = response.text().replace(/```json\n|\n```/g, '').trim()
     // Parse the JSON response from Gemini
-    // This gives us an object with age, location, and symptom
-    return JSON.parse(response.text())
+    // This gives us an object with age, location, condition, symptoms, isFollowUp, and followUpTopic
+    return JSON.parse(cleanedResponse)
   } catch (error) {
     console.error('Error parsing Gemini response:', response.text())
-    throw new Error('Failed to parse Gemini response')
+    // If JSON parsing fails, attempt to extract information manually
+    const manualExtraction = {
+      age: parseInt(input.match(/\b(\d+)\b/)?.[1]) || null,
+      location: (input.match(/\b(?:at|in)\s+([^\.]+)/i)?.[1] || '').trim() || null,
+      condition: (input.match(/\b(?:with|have)\s+(\w+)(?:\s+condition)?/i)?.[1] || null),
+      symptoms: (input.match(/symptoms?:?\s*(.+)$/i)?.[1] || '').split(/\s*,\s*|\s+and\s+/).filter(Boolean),
+      isFollowUp: input.toLowerCase().includes('previous') || input.toLowerCase().includes('earlier') || input.trim().endsWith('?'),
+      followUpTopic: null // We can't reliably extract this manually
+    }
+    console.log('Manually extracted data:', manualExtraction)
+    return manualExtraction
   }
 }
 
-// This function fetches relevant clinical trials based on the condition and country
-async function fetchClinicalTrials(condition, country) {
+// This function fetches relevant clinical trials based on the symptoms, condition, and country
+async function fetchClinicalTrials(symptoms, location, condition) {
+  // Construct the query string
+  const queryTerms = [...symptoms];
+  if (condition) queryTerms.push(condition);
+  const query = queryTerms.join(' OR ');
+
+  // Extract just the country name from the location
+  const country = location.split(' ')[0];
+
   // Construct the URL for the Clinical Trials API, including our search parameters
-  const url = `https://clinicaltrials.gov/api/v2/studies?format=json&query.cond=${encodeURIComponent(condition)}&query.locn=${encodeURIComponent(country)}&pageSize=5`
+  const url = `https://clinicaltrials.gov/api/v2/studies?format=json&query.cond=${encodeURIComponent(query)}&query.locn=${encodeURIComponent(country)}&pageSize=5`;
+  
+  console.log('Clinical Trials API URL:', url);
   
   // Fetch data from the Clinical Trials API
-  const response = await fetch(url)
+  const response = await fetch(url);
   
   // Check if the API request was successful
   if (!response.ok) {
-    throw new Error(`Clinical Trials API responded with status: ${response.status}`)
+    console.error('Clinical Trials API Error:', await response.text());
+    // Instead of throwing an error, return an empty array
+    return [];
   }
   
   // Parse the JSON response and return the studies
-  const data = await response.json()
-  return data.studies
+  const data = await response.json();
+  return data.studies || [];
 }
 
 // This function uses Gemini to generate health advice based on the extracted information
-async function generateHealthAdvice(age, location, symptom) {
-  // Get the Gemini model for text generation
+async function generateHealthAdvice(age, location, symptoms, condition, isFollowUp, followUpTopic, conversationHistory) {
+  // Get the Gemini model we'll use for text generation
   const model = genAI.getGenerativeModel({ model: "gemini-pro" })
   
   // Construct a prompt for Gemini to generate health advice
-  // We include the extracted age, location, and symptom in the prompt
-  const prompt = `
-    Generate brief health advice for a ${age}-year-old in ${location} experiencing ${symptom}.
-    Provide general recommendations and when to seek professional medical help.
+  // We include the extracted age, location, symptoms, and condition (if any) in the prompt
+  let prompt = `Given the following conversation history and current health information, `
+  
+  if (isFollowUp) {
+    prompt += `provide a detailed answer to the user's follow-up question or comment about ${followUpTopic || 'their previous health issue'}. `
+    prompt += `Consider the previous health information and advice given when formulating your response.`
+  } else {
+    prompt += `generate health advice for a person`
+    
+    if (age !== null) {
+      prompt += ` aged ${age}`
+    }
+    
+    if (location) {
+      prompt += ` in ${location}`
+    }
+    
+    if (symptoms.length > 0) {
+      prompt += ` experiencing the following symptom${symptoms.length > 1 ? 's' : ''}: ${symptoms.join(', ')}.`
+    } else {
+      prompt += ` with no reported symptoms.`
+    }
+    
+    if (condition) {
+      prompt += ` They have a pre-existing condition of ${condition}.`
+    }
+  }
+  
+  prompt += `
+    Provide specific recommendations for each symptom (if any) and when to seek professional medical help. 
+    If there's a pre-existing condition, consider how it might interact with the symptoms.
+    
+    Conversation history:
+    ${conversationHistory.join('\n')}
+    
+    Format the response as follows:
+    ${isFollowUp ? 'Answer: [Provide a detailed answer to the user\'s follow-up question or comment]' : `
+    General Advice:
+    [List general advice here, each point starting with "->"]
+    
+    ${symptoms.length > 0 ? `Symptom-specific Advice:
+    ${symptoms.map(symptom => `[${symptom}]:
+    [List advice for ${symptom} here, each point starting with "->"]`).join('\n\n')}
+    ` : ''}
+    When to Seek Medical Help:
+    [List situations when to seek medical help, each point starting with "->"]
+    `}
+    
+    CRITICAL FORMATTING INSTRUCTIONS:
+    1. Do not use any asterisks (*) or any symbols besides periods (.) and the arrow symbol (->).
+    2. For all bullet points and listing details, use only the arrow symbol "->".
+    3. Do not attempt to make any text bold or emphasized. Use plain text only.
+    4. Start each piece of advice or detail with "->", followed by a space, then the text.
+    5. Do not use any markdown or other formatting syntax.
+    
+    Example format:
+    General Advice:
+    -> Advice point 1
+    -> Advice point 2
+    
+    [Symptom]:
+    -> Specific advice 1
+    -> Specific advice 2
+    
+    When to Seek Medical Help:
+    -> Situation 1
+    -> Situation 2
   `
   
   // Send the prompt to Gemini and await the response
@@ -86,22 +182,26 @@ async function generateHealthAdvice(age, location, symptom) {
 
 export async function POST(request) {
   try {
-    const { userInput } = await request.json()
-    console.log('Received user input:', userInput)
+    const { userInput, conversationHistory = [] } = await request.json();
+    console.log('Received user input:', userInput);
+    console.log('Conversation history:', conversationHistory);
 
-    const extractedData = await processHealthInput(userInput)
-    console.log('Extracted data:', extractedData)
+    const extractedData = await processHealthInput(userInput, conversationHistory);
+    console.log('Extracted data:', extractedData);
 
-    const { age, location, symptom } = extractedData
+    const { age, location, condition, symptoms, isFollowUp, followUpTopic } = extractedData;
 
     const [clinicalTrials, healthAdvice] = await Promise.all([
-      fetchClinicalTrials(symptom, location),
-      generateHealthAdvice(age, location, symptom)
-    ])
+      fetchClinicalTrials(symptoms, location, condition).catch(error => {
+        console.error('Error fetching clinical trials:', error);
+        return []; // Return empty array if there's an error
+      }),
+      generateHealthAdvice(age, location, symptoms, condition, isFollowUp, followUpTopic, conversationHistory)
+    ]);
 
-    return NextResponse.json({ extractedData, clinicalTrials, healthAdvice })
+    return NextResponse.json({ extractedData, clinicalTrials, healthAdvice });
   } catch (error) {
-    console.error('Error processing request:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('Error processing request:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
