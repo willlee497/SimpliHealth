@@ -5,14 +5,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 // This allows us to use Gemini's capabilities throughout our application
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-/* We receive the user's input as a single string in the POST request.
-   This string contains information about the user's health concern, which may include age, location, and symptoms.
-   We pass this string to the `processHealthInput` function, which uses Gemini to extract the required information.
-   Gemini parses the input and returns a JSON object with age, location, and symptom.
-   We then use these extracted variables in subsequent function calls to fetch clinical trials and generate health advice.
-   Finally, we return all of this information, including the extracted variables, in our API response.
-   This approach allows us to effectively use Gemini for natural language processing, extracting structured data from unstructured text input. 
-   The extracted variables are then available for use throughout the rest of our application logic.
+/* We receive the user's input as a string in the POST request.
+ We pass this string to the `processHealthInput` function, which uses Gemini to extract the required information.
+ Gemini parses the input and returns a JSON object with age, location, and symptom.
+ We destructure this object to store these values as separate variables.
+ We then use these stored variables in subsequent function calls to fetch clinical trials and generate health advice.
+ Finally, we return all of this information, including the extracted variables, in our API response.
+This approach allows us to effectively use Gemini for natural language processing, extracting structured data from unstructured text input. 
+The extracted variables are then available for use throughout the rest of our application logic.
 */
 
 // This function uses Gemini to process the user's input and extract key health information
@@ -24,12 +24,11 @@ async function processHealthInput(input) {
   // We're asking Gemini to return the information in a specific JSON format
   const prompt = `
     Extract the age, location, and symptom from the following text. 
-    If any information is missing, use "unknown" for that field.
     Respond with a JSON object containing these three fields:
     {
-      "age": (number or "unknown"),
-      "location": (string or "unknown"),
-      "symptom": (string or "unknown")
+      "age": (number),
+      "location": (string),
+      "symptom": (string)
     }
     
     Text: "${input}"
@@ -39,9 +38,14 @@ async function processHealthInput(input) {
   const result = await model.generateContent(prompt)
   const response = await result.response
   
-  // Parse the JSON response from Gemini
-  // This gives us an object with age, location, and symptom
-  return JSON.parse(response.text())
+  try {
+    // Parse the JSON response from Gemini
+    // This gives us an object with age, location, and symptom
+    return JSON.parse(response.text())
+  } catch (error) {
+    console.error('Error parsing Gemini response:', response.text())
+    throw new Error('Failed to parse Gemini response')
+  }
 }
 
 // This function fetches relevant clinical trials based on the condition and country
@@ -70,63 +74,34 @@ async function generateHealthAdvice(age, location, symptom) {
   // Construct a prompt for Gemini to generate health advice
   // We include the extracted age, location, and symptom in the prompt
   const prompt = `
-    Given a patient with the following information:
-    Age: ${age}
-    Location: ${location}
-    Symptom: ${symptom}
-
-    Provide a brief analysis of potential health issues and general advice. 
-    Keep the response concise and informative, suitable for a health app user.
-    Do not provide a definitive diagnosis, but suggest possible causes and when to seek professional medical help.
+    Generate brief health advice for a ${age}-year-old in ${location} experiencing ${symptom}.
+    Provide general recommendations and when to seek professional medical help.
   `
   
   // Send the prompt to Gemini and await the response
   const result = await model.generateContent(prompt)
   const response = await result.response
-  
-  // Return the generated health advice as text
   return response.text()
 }
 
-// This is the main handler for POST requests to this API route
 export async function POST(request) {
   try {
-    // Extract the userInput from the request body
     const { userInput } = await request.json()
+    console.log('Received user input:', userInput)
 
-    // Check if userInput is provided
-    if (!userInput) {
-      return NextResponse.json({ error: 'No input provided' }, { status: 400 })
-    }
-
-    // Process user input with Gemini and store extracted data into variables
-    // This is where we use Gemini to parse the input and get our three key variables
     const extractedData = await processHealthInput(userInput)
+    console.log('Extracted data:', extractedData)
 
-    // Log the extracted variables for debugging purposes
-    // This shows that we've successfully stored age, location, and symptom as separate variables
-    console.log('Extracted variables:', extractedData)
+    const { age, location, symptom } = extractedData
 
-    // Fetch relevant clinical trials using the extracted symptom and location
-    // Here, we're using our stored variables to make an API call
-    const trials = await fetchClinicalTrials(extractedData.symptom, extractedData.location)
+    const [clinicalTrials, healthAdvice] = await Promise.all([
+      fetchClinicalTrials(symptom, location),
+      generateHealthAdvice(age, location, symptom)
+    ])
 
-    // Generate health advice using the extracted variables
-    // Again, we're using our stored variables as input for another function
-    const advice = await generateHealthAdvice(extractedData.age, extractedData.location, extractedData.symptom)
-
-    // Return a JSON response with all the processed data
-    // Note that we're including our extracted variables in the response
-    return NextResponse.json({
-      extractedData,
-      clinicalTrials: trials,
-      healthAdvice: advice
-    })
-
+    return NextResponse.json({ extractedData, clinicalTrials, healthAdvice })
   } catch (error) {
-    // Log any errors that occur during processing
     console.error('Error processing request:', error)
-    // Return an error response
-    return NextResponse.json({ error: 'An error occurred while processing your request.' }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
