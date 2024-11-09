@@ -101,7 +101,7 @@ async function fetchClinicalTrials(symptoms, location, condition) {
 
 // This function uses Gemini to generate health advice based on the extracted information
 async function generateHealthAdvice(age, location, symptoms, condition, isFollowUp, followUpTopic, conversationHistory) {
-  // Get the Gemini model for text generation
+  // Get the Gemini model we'll use for text generation
   const model = genAI.getGenerativeModel({ model: "gemini-pro" })
   
   // Construct a prompt for Gemini to generate health advice
@@ -142,13 +142,36 @@ async function generateHealthAdvice(age, location, symptoms, condition, isFollow
     
     Format the response as follows:
     ${isFollowUp ? 'Answer: [Provide a detailed answer to the user\'s follow-up question or comment]' : `
-    General Advice: [General advice here]
+    General Advice:
+    [List general advice here, each point starting with "->"]
     
     ${symptoms.length > 0 ? `Symptom-specific Advice:
-    ${symptoms.map(symptom => `[${symptom}]: [Advice for ${symptom}]`).join('\n')}
+    ${symptoms.map(symptom => `[${symptom}]:
+    [List advice for ${symptom} here, each point starting with "->"]`).join('\n\n')}
     ` : ''}
-    When to Seek Medical Help: [Advice on when to seek professional help]
+    When to Seek Medical Help:
+    [List situations when to seek medical help, each point starting with "->"]
     `}
+    
+    CRITICAL FORMATTING INSTRUCTIONS:
+    1. Do not use any asterisks (*) or any symbols besides periods (.) and the arrow symbol (->).
+    2. For all bullet points and listing details, use only the arrow symbol "->".
+    3. Do not attempt to make any text bold or emphasized. Use plain text only.
+    4. Start each piece of advice or detail with "->", followed by a space, then the text.
+    5. Do not use any markdown or other formatting syntax.
+    
+    Example format:
+    General Advice:
+    -> Advice point 1
+    -> Advice point 2
+    
+    [Symptom]:
+    -> Specific advice 1
+    -> Specific advice 2
+    
+    When to Seek Medical Help:
+    -> Situation 1
+    -> Situation 2
   `
   
   // Send the prompt to Gemini and await the response
