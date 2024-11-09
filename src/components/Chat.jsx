@@ -31,7 +31,10 @@ export default function ChatDisplay() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ userInput: inputValue }),
+        body: JSON.stringify({ 
+          userInput: inputValue,
+          conversationHistory: messages.map(m => `${m.type}: ${m.content}`)
+        }),
       })
 
       if (!response.ok) {
@@ -55,20 +58,24 @@ export default function ChatDisplay() {
               </CardHeader>
               <CardContent>
                 <h3 className="text-lg font-semibold mb-2">Extracted Information:</h3>
-                <p>Age: {data.extractedData.age}</p>
-                <p>Location: {data.extractedData.location}</p>
+                <p>Age: {data.extractedData.age || 'Not provided'}</p>
+                <p>Location: {data.extractedData.location || 'Not provided'}</p>
                 {data.extractedData.condition && <p>Condition: {data.extractedData.condition}</p>}
-                <p>Symptoms: {data.extractedData.symptoms.join(', ')}</p>
+                <p>Symptoms: {data.extractedData.symptoms.length > 0 ? data.extractedData.symptoms.join(', ') : 'None reported'}</p>
 
                 <h3 className="text-lg font-semibold mt-4 mb-2">Health Advice:</h3>
                 <pre className="whitespace-pre-wrap">{data.healthAdvice}</pre>
 
                 <h3 className="text-lg font-semibold mt-4 mb-2">Relevant Clinical Trials:</h3>
-                <ul>
-                  {data.clinicalTrials.map((trial, index) => (
-                    <li key={index}>- {trial.protocolSection.identificationModule.briefTitle}</li>
-                  ))}
-                </ul>
+                {data.clinicalTrials.length > 0 ? (
+                  <ul>
+                    {data.clinicalTrials.map((trial, index) => (
+                      <li key={index}>- {trial.protocolSection.identificationModule.briefTitle}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No relevant clinical trials found.</p>
+                )}
               </CardContent>
             </Card>
           )
@@ -125,7 +132,7 @@ export default function ChatDisplay() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="flex-grow"
-            placeholder="Describe your age, location, conditions, and symptoms..."
+            placeholder="Describe your health issue or ask a question..."
             disabled={isLoading}
           />
           <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-auto rounded-xl" disabled={isLoading}>
