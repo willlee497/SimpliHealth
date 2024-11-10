@@ -31,9 +31,9 @@ export default function Header() {
         hideHeader ? "-translate-y-full" : "translate-y-0"
       }`}
     >
-      <div className="flex items-center space-x-2 px-4">
+      <div className="flex items-center space-x-2 px-4 bg-lime-900 justify-center">
         <img className="inline-block w-auto h-[2.5rem] md:h-[3rem]" src = '/pngegg.png' alt = 'SimpliHealth Logo'/> 
-        <h1>SimpliHealth</h1>
+        <h1 className="text-white">SimpliHealth</h1>
       </div>
     </header>
   );

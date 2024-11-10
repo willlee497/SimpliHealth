@@ -5,6 +5,94 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import Header from './Header'
+
+// Custom hook for typing effect
+function useTypingEffect(text, speed = 50, startTyping = true) {
+  const [displayedText, setDisplayedText] = useState('')
+  const [isTypingComplete, setIsTypingComplete] = useState(false)
+
+  useEffect(() => {
+    let i = 0;
+    setDisplayedText('');
+    setIsTypingComplete(false);
+
+    // Avoid typing effect until typing has started
+    if (!startTyping) return;
+
+    const typingInterval = setInterval(() => {
+      if (i < text.length) {
+        setDisplayedText(prev => prev + text.charAt(i));
+        i++;
+      } else {
+        // Ensure the last letter is added before finishing
+        setTimeout(() => {
+          clearInterval(typingInterval);
+          setIsTypingComplete(true);
+        }, speed);
+      }
+    }, speed);
+
+    return () => clearInterval(typingInterval);
+  }, [text, speed, startTyping]);
+
+  return { displayedText, isTypingComplete };
+}
+
+// Typing Card component
+function TypingCard({ data }) {
+  if (!data || !data.extractedData) {
+    return <p>Error: Invalid data received</p>;
+  }
+
+  const { displayedText: extractedInfo, isTypingComplete: extractedComplete } = useTypingEffect(
+    `Age: ${data.extractedData.age || 'Not provided'}
+Location: ${data.extractedData.location || 'Not provided'}
+${data.extractedData.condition ? `Condition: ${data.extractedData.condition}` : ''}
+Symptoms: ${data.extractedData.symptoms.length > 0 ? data.extractedData.symptoms.join(', ') : 'None reported'}`,
+    50
+  );
+
+  const { displayedText: healthAdvice, isTypingComplete: adviceComplete } = useTypingEffect(
+    data.healthAdvice,
+    30,
+    extractedComplete // Only start healthAdvice typing after extractedInfo is complete
+  );
+
+  const { displayedText: trials, isTypingComplete: trialsComplete } = useTypingEffect(
+    data.clinicalTrials.length > 0
+      ? data.clinicalTrials.map(trial => `- ${trial.protocolSection.identificationModule.briefTitle}`).join('\n')
+      : 'No relevant clinical trials found.',
+    20,
+    adviceComplete // Only start trials typing after healthAdvice is complete
+  );
+
+  return (
+    <Card className="w-full bg-lime-900 text-white">
+      <CardHeader>
+        <CardTitle>Health Information</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <h3 className="text-lg font-semibold mb-2">Extracted Information:</h3>
+        <pre className="whitespace-pre-wrap">{extractedInfo}</pre>
+
+        {extractedComplete && (
+          <>
+            <h3 className="text-lg font-semibold mt-4 mb-2">Health Advice:</h3>
+            <pre className="whitespace-pre-wrap">{healthAdvice}</pre>
+          </>
+        )}
+
+        {adviceComplete && (
+          <>
+            <h3 className="text-lg font-semibold mt-4 mb-2">Relevant Clinical Trials:</h3>
+            <pre className="whitespace-pre-wrap">{trials}</pre>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function ChatDisplay() {
   const [messages, setMessages] = useState([])
@@ -51,34 +139,7 @@ export default function ChatDisplay() {
         ...prev,
         {
           type: 'assistant',
-          content: (
-            <Card className="w-full bg-gray-900 text-white">
-              <CardHeader>
-                <CardTitle>Health Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <h3 className="text-lg font-semibold mb-2">Extracted Information:</h3>
-                <p>Age: {data.extractedData.age || 'Not provided'}</p>
-                <p>Location: {data.extractedData.location || 'Not provided'}</p>
-                {data.extractedData.condition && <p>Condition: {data.extractedData.condition}</p>}
-                <p>Symptoms: {data.extractedData.symptoms.length > 0 ? data.extractedData.symptoms.join(', ') : 'None reported'}</p>
-
-                <h3 className="text-lg font-semibold mt-4 mb-2">Health Advice:</h3>
-                <pre className="whitespace-pre-wrap">{data.healthAdvice}</pre>
-
-                <h3 className="text-lg font-semibold mt-4 mb-2">Relevant Clinical Trials:</h3>
-                {data.clinicalTrials.length > 0 ? (
-                  <ul>
-                    {data.clinicalTrials.map((trial, index) => (
-                      <li key={index}>- {trial.protocolSection.identificationModule.briefTitle}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>No relevant clinical trials found.</p>
-                )}
-              </CardContent>
-            </Card>
-          )
+          content: data && data.extractedData ? <TypingCard data={data} /> : 'Error: Invalid response from server'
         }
       ])
     } catch (error) {
@@ -91,15 +152,40 @@ export default function ChatDisplay() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-800">
+    <div className="flex flex-col h-screen bg-amber-100">
+      {messages.length > 0 && <Header />}
+    
       <ScrollArea className="flex-grow p-4 overflow-auto" ref={scrollAreaRef}>
         {messages.length === 0 ? (
           <div className="flex flex-col justify-center items-center h-full">
-            <h2 className="text-white text-2xl mb-4">What's going on?</h2>
-            <p className="text-gray-400 text-center">
-              Describe your age, location, any pre-existing conditions, and current symptoms.
+          <img
+              className="w-64 h-64 p-4"
+              src='/pngegg.png'
+              alt="Image"
+            />
+            <h2 className="text-lime-900 text-2xl mb-4">What's going on?</h2>
+    
+            <form onSubmit={handleSubmit} className="w-full max-w-lg flex space-x-2">
+              <Input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                className="flex-1 placeholder:text-lime-900 text-lime-900"
+                placeholder="Describe your health issue or ask a question..."
+                disabled={isLoading}
+              />
+              <Button
+                type="submit"
+                className="bg-lime-900 hover:bg-lime-950 w-auto rounded-xl"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Processing...' : 'Submit'}
+              </Button>
+            </form>
+            <h1 className="text-lime-900 text-sm text-center mb-6 pt-4">
+              Describe your age, location, any pre-existing conditions, and current symptoms. <br />
               For example: "I'm 43 at Congo. I have diabetes, and my stomach hurts. I'm also vomiting blood."
-            </p>
+            </h1>
           </div>
         ) : (
           messages.map((message, index) => (
@@ -112,7 +198,11 @@ export default function ChatDisplay() {
                   message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                <div className={`mx-2 p-3 rounded-xl ${message.type === 'user' ? 'bg-blue-600' : 'bg-gray-900'} text-white`}>
+                <div
+                  className={`mx-2 p-3 rounded-xl ${
+                    message.type === 'user' ? 'bg-lime-900' : 'bg-gray-900'
+                  } text-white`}
+                >
                   {typeof message.content === 'string' ? (
                     <pre className="text-sm whitespace-pre-wrap font-sans">{message.content}</pre>
                   ) : (
@@ -124,22 +214,28 @@ export default function ChatDisplay() {
           ))
         )}
       </ScrollArea>
-      
-      <div className="flex justify-center items-center p-4">
-        <form onSubmit={handleSubmit} className="w-full max-w-3xl flex space-x-2">
-          <Input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="flex-grow"
-            placeholder="Describe your health issue or ask a question..."
-            disabled={isLoading}
-          />
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 w-auto rounded-xl" disabled={isLoading}>
-            {isLoading ? 'Processing...' : 'Submit'}
-          </Button>
-        </form>
-      </div>
+    
+      {messages.length > 0 && (
+        <div className="flex justify-center items-center p-4">
+          <form onSubmit={handleSubmit} className="w-full max-w-3xl flex space-x-2">
+            <Input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              className="flex-1 mt-1 placeholder:text-lime-900 text-lime-900"
+              placeholder="Describe your health issue or ask a question..."
+              disabled={isLoading}
+            />
+            <Button
+              type="submit"
+              className="bg-lime-900 hover:bg-lime-950 w-auto rounded-xl"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Processing...' : 'Submit'}
+            </Button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
