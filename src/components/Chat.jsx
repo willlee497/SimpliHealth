@@ -205,7 +205,7 @@ export default function ChatDisplay() {
               >
                 <div
                   className={`mx-2 p-3 rounded-xl ${
-                    message.type === 'user' ? 'bg-lime-900' : 'bg-gray-900'
+                    message.type === 'user' ? 'bg-lime-900' : 'bg-lime-900'
                   } text-white`}
                 >
                   {typeof message.content === 'string' ? (
