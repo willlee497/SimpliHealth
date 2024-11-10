@@ -32,7 +32,7 @@ export default function Header() {
       }`}
     >
       <div className="flex items-center space-x-2 px-4 bg-lime-900 justify-center">
-        <img className="inline-block w-auto h-[2.5rem] md:h-[3rem]" src = '/pngegg.png' alt = 'SimpliHealth Logo'/> 
+        <img className="inline-block w-auto h-[2.5rem] md:h-[3rem] p-1" src = '/logoWhite.png' alt = 'SimpliHealth Logo'/> 
         <h1 className="text-white">SimpliHealth</h1>
       </div>
     </header>

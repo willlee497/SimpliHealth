@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import ChatDisplay from "@/components/Chat"
+import Head from 'next/head'
 
 export default function Home() {
   const [messages, setMessages] = useState([])
@@ -50,6 +51,9 @@ ${data.clinicalTrials.map((trial) => `- ${trial.protocolSection.identificationMo
 
   return (
     <div className="flex flex-col h-screen">
+      <Head>
+        <title>SimpliHealth</title>
+      </Head>
       <ChatDisplay messages={messages} onSubmit={handleSubmit} />
     </div>
   )

@@ -165,7 +165,7 @@ export default function ChatDisplay() {
           <div className="flex flex-col justify-center items-center h-full">
             <img
               className="w-64 h-64 p-4"
-              src='/pngegg.png'
+              src='/textLogo.png'
               alt="Image"
             />
             <h2 className="text-lime-900 text-2xl mb-4">What is going on?</h2>
