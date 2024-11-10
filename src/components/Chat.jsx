@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Header from './Header'
 
-// Custom hook for typing effect
+// Custom hook for typing effect with error correction
 function useTypingEffect(text, speed = 50, startTyping = true) {
   const [displayedText, setDisplayedText] = useState('')
   const [isTypingComplete, setIsTypingComplete] = useState(false)
@@ -17,19 +17,24 @@ function useTypingEffect(text, speed = 50, startTyping = true) {
     setDisplayedText('');
     setIsTypingComplete(false);
 
-    // Avoid typing effect until typing has started
     if (!startTyping) return;
 
     const typingInterval = setInterval(() => {
       if (i < text.length) {
-        setDisplayedText(prev => prev + text.charAt(i));
+        setDisplayedText(prev => {
+          // Ensure full words are typed before moving to the next
+          const nextChar = text.charAt(i);
+          if (nextChar === ' ' || i === text.length - 1) {
+            return text.substring(0, i + 1);
+          }
+          return prev + nextChar;
+        });
         i++;
       } else {
-        // Ensure the last letter is added before finishing
-        setTimeout(() => {
-          clearInterval(typingInterval);
-          setIsTypingComplete(true);
-        }, speed);
+        clearInterval(typingInterval);
+        setIsTypingComplete(true);
+        // Final check to ensure complete text is displayed
+        setDisplayedText(text);
       }
     }, speed);
 
@@ -56,15 +61,15 @@ Symptoms: ${data.extractedData.symptoms.length > 0 ? data.extractedData.symptoms
   const { displayedText: healthAdvice, isTypingComplete: adviceComplete } = useTypingEffect(
     data.healthAdvice,
     30,
-    extractedComplete // Only start healthAdvice typing after extractedInfo is complete
+    extractedComplete
   );
 
   const { displayedText: trials, isTypingComplete: trialsComplete } = useTypingEffect(
     data.clinicalTrials.length > 0
-      ? data.clinicalTrials.map(trial => `- ${trial.protocolSection.identificationModule.briefTitle}`).join('\n')
+      ? data.clinicalTrials.map(trial => `-> ${trial.protocolSection.identificationModule.briefTitle}`).join('\n')
       : 'No relevant clinical trials found.',
     20,
-    adviceComplete // Only start trials typing after healthAdvice is complete
+    adviceComplete
   );
 
   return (
@@ -158,12 +163,12 @@ export default function ChatDisplay() {
       <ScrollArea className="flex-grow p-4 overflow-auto" ref={scrollAreaRef}>
         {messages.length === 0 ? (
           <div className="flex flex-col justify-center items-center h-full">
-          <img
+            <img
               className="w-64 h-64 p-4"
               src='/pngegg.png'
               alt="Image"
             />
-            <h2 className="text-lime-900 text-2xl mb-4">What's going on?</h2>
+            <h2 className="text-lime-900 text-2xl mb-4">What is going on?</h2>
     
             <form onSubmit={handleSubmit} className="w-full max-w-lg flex space-x-2">
               <Input
@@ -184,7 +189,7 @@ export default function ChatDisplay() {
             </form>
             <h1 className="text-lime-900 text-sm text-center mb-6 pt-4">
               Describe your age, location, any pre-existing conditions, and current symptoms. <br />
-              For example: "I'm 43 at Congo. I have diabetes, and my stomach hurts. I'm also vomiting blood."
+              For example: "I am 43 at Congo. I have diabetes, and my stomach hurts. I am also vomiting blood."
             </h1>
           </div>
         ) : (
